@@ -1,7 +1,9 @@
+import math
 import numpy as np
 from helperfunctions import add_pose_from_global, add_landmark_measurement_from_global
 import gtsam
 from gtsam.symbol_shorthand import L, X
+
 
 PRIOR_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.1, 0.1, 0.05]))  # (x, y, theta)
 ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.2, 0.2, 0.1]))  # (dx, dy, dtheta)
@@ -79,10 +81,7 @@ def minimize_marginals(graph, initial_estimate, pose_options):
 def minimize_errors(graph, initial_estimate, pose_options):
     best_pose = None
     best_landmark = None
-    best_error = float('inf')
-    best_mahal = float('inf')
-
-    true_poses = [gtsam.Pose2(0,0,0), gtsam.Pose2(2,0,0), gtsam.Pose2(4,0,0)]
+    best_sum = float('inf')
 
     for pose_key, pose_5 in pose_options.items():
         for landmark in [1, 2]:
@@ -91,23 +90,18 @@ def minimize_errors(graph, initial_estimate, pose_options):
             g, ie = add_pose(g, ie, pose_5)
             result = optimize(g, ie)
             g = add_landmark_measurement(g, result, pose_5, landmark)
-            result = optimize(g, result)
+            result = optimize(g, ie)
 
-            error = g.error(result)
+            mse_X1 = math.sqrt((result.atPose2(X(1)).x()-0)**2 + (result.atPose2(X(1)).y()-0)**2 + (result.atPose2(X(1)).theta()-0)**2)
+            mse_X2 = math.sqrt((result.atPose2(X(2)).x()-2)**2 + (result.atPose2(X(2)).y()-0)**2 + (result.atPose2(X(2)).theta()-0)**2)
+            mse_X3 = math.sqrt((result.atPose2(X(3)).x()-4)**2 + (result.atPose2(X(3)).y()-0)**2 + (result.atPose2(X(3)).theta()-0)**2)
 
-            marginals = gtsam.Marginals(g, result)
-            mahal = 0
-            for i in range(1, 4):
-                cov = marginals.marginalCovariance(X(i))
-                est = result.atPose2(X(i))
-                true = true_poses[i-1]
-                diff = np.array([est.x()-true.x(), est.y()-true.y(), est.theta()-true.theta()])
-                mahal += diff @ np.linalg.inv(cov) @ diff
+            sum_of_errors = mse_X1 + mse_X2 + mse_X3
+            print(f"pose={pose_key}, landmark={landmark}, sum={sum_of_errors:.6e}")
 
-            if error < best_error:
-                best_error = error
-                best_mahal = mahal
+            if sum_of_errors < best_sum:
+                best_sum = sum_of_errors
                 best_pose = pose_key
                 best_landmark = landmark
 
-    return best_pose, best_landmark, best_mahal
+    return best_pose, best_landmark, best_sum
